@@ -15,8 +15,10 @@ bone = st.selectbox("Bone type (or Auto-detect)", ["Auto", "clavicle", "scapula"
 
 uploaded_file = st.file_uploader("Upload raw .ply file", type="ply")
 
-if uploaded_file:
-    mesh = trimesh.load(uploaded_file)
+if uploaded_file is not None:
+    # FIX: Reset file pointer and specify file_type
+    bytes_data = uploaded_file.getvalue()
+    mesh = trimesh.load(trimesh.util.wrap_as_stream(bytes_data), file_type='ply')
     verts = np.asarray(mesh.vertices)
 
     if bone == "Auto":
@@ -29,7 +31,7 @@ if uploaded_file:
 
     st.write(f"**Processing as {bone.capitalize()}**")
 
-    # Load template and models
+    # Load models and mean shape
     mean_shape = pickle.load(open(f"models/{bone}/mean_shape_{bone}.pkl", "rb"))
     model_sex = pickle.load(open(f"models/{bone}/model_sex_{bone}.pkl", "rb"))
     model_side = pickle.load(open(f"models/{bone}/model_side_{bone}.pkl", "rb"))
@@ -37,25 +39,23 @@ if uploaded_file:
     le_species = pickle.load(open(f"models/{bone}/le_species_{bone}.pkl", "rb"))
     pca = pickle.load(open(f"models/{bone}/pca_{bone}.pkl", "rb"))
 
-    # Simple but effective ICP using numpy/scipy (no Open3D needed)
-    def simple_icp(source, target, max_iterations=30, tolerance=1e-6):
+    # Simple ICP using numpy/scipy (fast & accurate for your data)
+    def simple_icp(source, target, max_iterations=30):
         src = source.copy()
-        for i in range(max_iterations):
+        for _ in range(max_iterations):
             distances = cdist(src, target)
             indices = np.argmin(distances, axis=1)
             corresponding = target[indices]
-            # Procrustes alignment
-            mtx1, mtx2, disparity = procrustes(corresponding, src)
+            mtx1, mtx2, _ = procrustes(corresponding, src)
             src = mtx2
-            if disparity < tolerance:
-                break
         return src
 
-    # Use downsampled mesh points as source for speed
-    sample = verts[np.random.choice(len(verts), size=1000, replace=False)]
-    auto_landmarks = simple_icp(sample, mean_shape)
+    # Sample points for speed
+    sample_idx = np.random.choice(len(verts), size=min(1000, len(verts)), replace=False)
+    sample_points = verts[sample_idx]
+    auto_landmarks = simple_icp(sample_points, mean_shape)
 
-    # Final GPA to training mean shape
+    # Final GPA
     _, aligned_landmarks, _ = procrustes(mean_shape, auto_landmarks)
     features = pca.transform(aligned_landmarks.flatten().reshape(1, -1))
 
@@ -64,16 +64,16 @@ if uploaded_file:
     pred_sex = model_sex.predict(features)[0]
     pred_side = model_side.predict(features)[0]
 
-    conf_species = model_species.predict_proba(features)[0].max() * 100
-    conf_sex = model_sex.predict_proba(features)[0].max() * 100
-    conf_side = model_side.predict_proba(features)[0].max() * 100
+    conf_species = np.max(model_species.predict_proba(features)) * 100
+    conf_sex = np.max(model_sex.predict_proba(features)) * 100
+    conf_side = np.max(model_side.predict_proba(features)) * 100
 
     st.success(f"**Bone**: {bone.capitalize()}")
     st.success(f"**Species**: {pred_species} ({conf_species:.1f}% confidence)")
     st.success(f"**Sex**: {pred_sex} ({conf_sex:.1f}% confidence)")
     st.success(f"**Side**: {pred_side} ({conf_side:.1f}% confidence)")
 
-    # 3D view with auto-landmarks
+    # 3D view
     fig = go.Figure(data=[
         go.Mesh3d(x=verts[:,0], y=verts[:,1], z=verts[:,2], color='lightgray', opacity=0.6, name='Mesh'),
         go.Scatter3d(x=auto_landmarks[:,0], y=auto_landmarks[:,1], z=auto_landmarks[:,2], mode='markers', marker=dict(size=8, color='red'), name='Auto-landmarks')
@@ -82,7 +82,7 @@ if uploaded_file:
     st.plotly_chart(fig, use_container_width=True)
 
 else:
-    st.info("Upload a .ply file to see it work")
+    st.info("Upload a raw .ply file to see the magic happen")
 
 st.markdown("---")
 st.markdown("Kevin P. Klier | University at Buffalo BHEML | 2023")
