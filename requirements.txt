@@ -1,8 +1,7 @@
 streamlit
 numpy
-scikit-learn
 scipy
-imbalanced-learn
+scikit-learn
 trimesh
 plotly
-open3d
+open3d==0.18.0
