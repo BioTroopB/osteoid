@@ -4,4 +4,4 @@ scipy
 scikit-learn
 trimesh
 plotly
-open3d-cpu
+open3d==0.18.0
