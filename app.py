@@ -21,7 +21,7 @@ if uploaded_file is not None:
     mesh = trimesh.load(trimesh.util.wrap_as_stream(bytes_data), file_type='ply')
     verts = np.asarray(mesh.vertices)
 
-    # FIXED AUTO-DETECTION (tuned to real .ply vertex counts from your scans)
+    # AUTO-DETECTION (tuned to real .ply vertex counts from your scans)
     if bone == "Auto":
         n_verts = len(verts)
         if n_verts < 15000:
@@ -41,30 +41,31 @@ if uploaded_file is not None:
     le_species = pickle.load(open(f"models/{bone}/le_species_{bone}.pkl", "rb"))
     pca = pickle.load(open(f"models/{bone}/pca_{bone}.pkl", "rb"))
 
-    # FIXED ICP — proper unpacking (disp is scalar)
+    # FIXED ICP: Align sparse mean_shape (template) to dense sample_points (mesh)
     def simple_icp(source, target, max_iterations=30, threshold=1e-6):
-        s = source.copy()
+        s = source.copy()  # Start with sparse template
         prev_disp = np.inf
         for _ in range(max_iterations):
-            dists = cdist(s, target)
-            correspondences = target[np.argmin(dists, axis=1)]
-            # FIXED: _, s, disp — s gets transformed, disp is scalar disparity
-            _, s, disp = procrustes(s, correspondences)
+            dists = cdist(s, target)  # Distance from template to mesh points
+            indices = np.argmin(dists, axis=1)
+            correspondences = target[indices]  # Closest mesh points to template (same size as s)
+            # FIXED: Align s (template) to correspondences (target points)
+            _, s, disp = procrustes(correspondences, s)
             if abs(prev_disp - disp) < threshold:
                 break
             prev_disp = disp
         return s
 
-    # Sample points for speed (match landmark counts + oversample for robust ICP)
+    # Sample points for speed (dense subset of mesh)
     landmark_counts = {"clavicle": 7, "scapula": 13, "humerus": 16}
-    n_samples = landmark_counts.get(bone, 10) * 10  # Oversample 10x for better alignment
-    sample_idx = np.random.choice(len(verts), size=min(n_samples, len(verts)), replace=False)
+    n_samples = min(10000, len(verts))  # Dense sample for accurate matching (up to 10k points)
+    sample_idx = np.random.choice(len(verts), size=n_samples, replace=False)
     sample_points = verts[sample_idx]
 
-    # Run ICP to auto-landmark
-    auto_landmarks = simple_icp(sample_points, mean_shape)
+    # Run ICP: Source=mean_shape (sparse), target=sample_points (dense)
+    auto_landmarks = simple_icp(mean_shape, sample_points)
 
-    # Final GPA (align to mean)
+    # Final GPA (both now same shape)
     _, aligned_landmarks, _ = procrustes(mean_shape, auto_landmarks)
 
     # PCA + Predict
@@ -99,4 +100,3 @@ st.markdown("---")
 st.markdown("Kevin P. Klier | 2025")
 st.markdown("Based on M.A. research at University at Buffalo under advisement of Dr. Noreen von Cramon-Taubadel")
 st.markdown("Non-human primates only")
-
