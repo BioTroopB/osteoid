@@ -49,7 +49,13 @@ if uploaded_file is not None:
             dists = cdist(s, target)  # Distance from template to mesh points
             indices = np.argmin(dists, axis=1)
             correspondences = target[indices]  # Closest mesh points to template (same size as s)
-            # FIXED: Align s (template) to correspondences (target points)
+
+            # FIXED: Add tiny jitter if correspondences has non-unique points (to avoid norm=0)
+            unique_cor = np.unique(correspondences, axis=0)
+            if len(unique_cor) <= 1:
+                correspondences += np.random.normal(0, 1e-8, correspondences.shape)  # Tiny noise to make unique
+
+            # Align s (template) to correspondences (target points)
             _, s, disp = procrustes(correspondences, s)
             if abs(prev_disp - disp) < threshold:
                 break
