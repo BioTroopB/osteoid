@@ -8,7 +8,7 @@ from scipy.spatial import procrustes
 
 st.set_page_config(page_title="OsteoID.ai", layout="centered")
 st.title("OsteoID.ai")
-st.markdown("**Primate Shoulder Bone Classifier-Beta** — Kevin P. Klier")
+st.markdown("**Primate Shoulder Bone Classifier** — Kevin P. Klier")
 st.markdown("Upload any raw .ply file — no landmarking required · Auto-landmarking via ICP")
 
 bone = st.selectbox("Bone type (or Auto-detect)", ["Auto", "clavicle", "scapula", "humerus"])
@@ -25,18 +25,21 @@ if uploaded_file is not None:
     centroid = np.mean(verts, axis=0)
     verts -= centroid
 
-    # UPDATED: Pre-center the mesh to match GPA data (fixes alignment bias)
-    centroid = np.mean(verts, axis=0)
-    verts -= centroid
-
-    # UPDATED AUTO-DETECTION: Higher thresholds for typical scan densities (adjust based on your files)
+    # UPDATED: Improved auto-detection with vertex count + bounding box aspect ratio
+    # Clavicle: long/thin (high length/width)
+    # Scapula: flat (low depth/length)
+    # Humerus: long/cylindrical (high length/diameter)
     if bone == "Auto":
         n_verts = len(verts)
-        if n_verts < 60000:  # Clavicles often lower density
+        bbox = np.ptp(verts, axis=0)  # Bounding box extents [x,y,z]
+        aspect_ratios = np.sort(bbox)[::-1]  # Largest to smallest dimensions
+        length, width, depth = aspect_ratios
+
+        if length / width > 4 and n_verts < 80000:  # Long thin for clavicle
             bone = "clavicle"
-        elif n_verts < 150000:  # Scapulae medium
+        elif depth / length < 0.3:  # Flat for scapula
             bone = "scapula"
-        else:  # Humeri higher
+        else:  # Long cylindrical for humerus
             bone = "humerus"
 
     st.write(f"**Processing as {bone.capitalize()}** ({len(verts):,} vertices)")
@@ -49,14 +52,14 @@ if uploaded_file is not None:
     le_species = pickle.load(open(f"models/{bone}/le_species_{bone}.pkl", "rb"))
     pca = pickle.load(open(f"models/{bone}/pca_{bone}.pkl", "rb"))
 
-    # UPDATED: Pre-scale mesh to match mean_shape size (fixes size mismatch bias)
+    # UPDATED: Scale mesh to match mean_shape size (fixes size mismatch bias)
     mesh_cs = np.sqrt(np.sum(verts**2) / len(verts))  # Centroid size of mesh
     mean_cs = np.sqrt(np.sum(mean_shape**2) / len(mean_shape))  # Centroid size of template
     scale_factor = mean_cs / mesh_cs if mesh_cs > 0 else 1.0
     verts *= scale_factor
 
     # FIXED ICP: Align sparse mean_shape (template) to dense sample_points (mesh)
-    def simple_icp(source, target, max_iterations=50, threshold=1e-6):  # Increased iterations for better convergence
+    def simple_icp(source, target, max_iterations=50, threshold=1e-6):
         s = source.copy()  # Start with sparse template
         prev_disp = np.inf
         for _ in range(max_iterations):
@@ -120,6 +123,6 @@ else:
     st.info("Upload a raw .ply file to see the magic happen")
 
 st.markdown("---")
-st.markdown("Kevin P. Klier | 2025")
-st.markdown("Based on M.A. research at University at Buffalo under advisement of Dr. Noreen von Cramon-Taubadel and Dr. Nicholas Holowka")
+st.markdown("Kevin P. Klier | 2023")
+st.markdown("Based on M.A. research at University at Buffalo under advisement of Dr. Noreen von Cramon-Taubadel")
 st.markdown("Non-human primates only")
