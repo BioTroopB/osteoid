@@ -8,7 +8,7 @@ from scipy.spatial import procrustes
 
 st.set_page_config(page_title="OsteoID.ai", layout="centered")
 st.title("OsteoID.ai")
-st.markdown("**Primate Shoulder Bone Classifier** — Kevin P. Klier")
+st.markdown("**Primate Shoulder Bone Classifier-Beta** — Kevin P. Klier")
 st.markdown("Upload any raw .ply file — no landmarking required · Auto-landmarking via ICP")
 
 bone = st.selectbox("Bone type (or Auto-detect)", ["Auto", "clavicle", "scapula", "humerus"])
@@ -20,6 +20,10 @@ if uploaded_file is not None:
     bytes_data = uploaded_file.getvalue()
     mesh = trimesh.load(trimesh.util.wrap_as_stream(bytes_data), file_type='ply')
     verts = np.asarray(mesh.vertices)
+
+    # Pre-center the mesh
+    centroid = np.mean(verts, axis=0)
+    verts -= centroid
 
     # UPDATED: Pre-center the mesh to match GPA data (fixes alignment bias)
     centroid = np.mean(verts, axis=0)
@@ -45,6 +49,12 @@ if uploaded_file is not None:
     le_species = pickle.load(open(f"models/{bone}/le_species_{bone}.pkl", "rb"))
     pca = pickle.load(open(f"models/{bone}/pca_{bone}.pkl", "rb"))
 
+    # UPDATED: Pre-scale mesh to match mean_shape size (fixes size mismatch bias)
+    mesh_cs = np.sqrt(np.sum(verts**2) / len(verts))  # Centroid size of mesh
+    mean_cs = np.sqrt(np.sum(mean_shape**2) / len(mean_shape))  # Centroid size of template
+    scale_factor = mean_cs / mesh_cs if mesh_cs > 0 else 1.0
+    verts *= scale_factor
+
     # FIXED ICP: Align sparse mean_shape (template) to dense sample_points (mesh)
     def simple_icp(source, target, max_iterations=50, threshold=1e-6):  # Increased iterations for better convergence
         s = source.copy()  # Start with sparse template
@@ -67,7 +77,7 @@ if uploaded_file is not None:
 
     # Sample points for speed (dense subset of mesh)
     landmark_counts = {"clavicle": 7, "scapula": 13, "humerus": 16}
-    n_samples = min(20000, len(verts))  # UPDATED: Denser sample (up to 20k) for better matching on complex bones
+    n_samples = min(20000, len(verts))  # Dense sample for accurate matching (up to 20k points)
     sample_idx = np.random.choice(len(verts), size=n_samples, replace=False)
     sample_points = verts[sample_idx]
 
@@ -88,7 +98,7 @@ if uploaded_file is not None:
     conf_sex = np.max(model_sex.predict_proba(features)) * 100
     conf_side = np.max(model_side.predict_proba(features)) * 100
 
-    # UPDATED: Low confidence warning (helps diagnose alignment issues)
+    # Low confidence warning (helps diagnose alignment issues)
     if min(conf_species, conf_sex, conf_side) < 60:
         st.warning("Low confidence across predictions—alignment may be poor. Try recentering/scaling the .ply in MeshLab or Blender before upload.")
 
@@ -110,6 +120,6 @@ else:
     st.info("Upload a raw .ply file to see the magic happen")
 
 st.markdown("---")
-st.markdown("Kevin P. Klier | 2023")
-st.markdown("Based on M.A. research at University at Buffalo under advisement of Dr. Noreen von Cramon-Taubadel")
+st.markdown("Kevin P. Klier | 2025")
+st.markdown("Based on M.A. research at University at Buffalo under advisement of Dr. Noreen von Cramon-Taubadel and Dr. Nicholas Holowka")
 st.markdown("Non-human primates only")
