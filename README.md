@@ -1,14 +1,3 @@
----
-title: PrimateOsteoID.ai
-emoji: 🦴
-colorFrom: blue
-colorTo: green
-sdk: docker
-app_file: app.py
-dockerfile: Dockerfile
-pinned: false
----
-
 # PrimateOsteoID.ai — AI Primate Shoulder Classifier
 
 **Live Demo (v1 — stable public version)**  
@@ -105,3 +94,4 @@ Data shared with explicit approval from Dr. Noreen von Cramon-Taubadel.
 M.A. Anthropology, University at Buffalo, 2023  
 
 ---
+
